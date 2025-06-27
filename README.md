@@ -54,8 +54,6 @@ A real-time multiplayer Pictionary game with cross-platform support. Players can
    # Install frontend dependencies
    cd frontend && npm install && cd ..
    
-   # Install mobile dependencies (optional)
-   cd mobile && npm install && cd ..
    ```
 
 3. **Start the development servers**
