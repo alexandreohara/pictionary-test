@@ -41,7 +41,7 @@ A real-time multiplayer Pictionary game with cross-platform support. Players can
 1. **Clone the repository**
 
    ```bash
-   git clone <repository-url>
+   git clone https://github.com/alexandreohara/pictionary-test.git
    cd pictionary-test
    ```
 
