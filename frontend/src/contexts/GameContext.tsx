@@ -1,12 +1,16 @@
 import React, {
   createContext,
   useContext,
-  useState,
+  useReducer,
   useEffect,
   ReactNode,
 } from "react";
-import { io, Socket } from "socket.io-client";
-import { GameContextType, GameState, User, GuessEvent } from "../types";
+import { GameContextType, User, GuessEvent } from "../types";
+import { SocketService, SocketCallbacks } from "../services/socket-service";
+import {
+  gameStateReducer,
+  initialGameState,
+} from "../reducers/game-state-reducer";
 
 const GameContext = createContext<GameContextType | undefined>(undefined);
 
@@ -23,145 +27,130 @@ interface GameProviderProps {
 }
 
 export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
-  const [socket, setSocket] = useState<Socket | null>(null);
-  const [gameState, setGameState] = useState<GameState>(GameState.HOME);
-  const [roomCode, setRoomCode] = useState<string>("");
-  const [username, setUsername] = useState<string>("");
-  const [users, setUsers] = useState<User[]>([]);
-  const [currentUser, setCurrentUser] = useState<User | null>(null);
-  const [currentWord, setCurrentWord] = useState<string>("");
-  const [timeLeft, setTimeLeft] = useState<number>(60);
-  const [guesses, setGuesses] = useState<GuessEvent[]>([]);
-  const [scores, setScores] = useState<{ [userId: string]: number }>({});
+  const [state, dispatch] = useReducer(gameStateReducer, initialGameState);
+  const socketService = new SocketService();
 
   useEffect(() => {
-    const socketInstance = io(
+    socketService.connect(
       import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"
     );
-    setSocket(socketInstance);
 
-    // Event listeners
-    socketInstance.on("room_joined", ({ users, roomCode }) => {
-      console.log("room_joined event:", {
-        users,
-        roomCode,
-        currentUsername: username,
-      });
-      setUsers(users);
-      setRoomCode(roomCode);
-      setGameState(GameState.WAITING);
-    });
+    // Setup socket event callbacks
+    const callbacks: SocketCallbacks = {
+      onRoomJoined: ({ users, roomCode }) => {
+        console.log("room_joined event:", {
+          users,
+          roomCode,
+          currentUsername: state.username,
+        });
+        dispatch({ type: "ROOM_JOINED", payload: { users, roomCode } });
+      },
 
-    socketInstance.on("user_joined", (user: User) => {
-      setUsers((prev) => [...prev, user]);
-    });
+      onUserJoined: (user: User) => {
+        dispatch({ type: "ADD_USER", payload: user });
+      },
 
-    socketInstance.on("user_left", (userId: string) => {
-      setUsers((prev) => prev.filter((u) => u.id !== userId));
-    });
+      onUserLeft: (userId: string) => {
+        dispatch({ type: "REMOVE_USER", payload: userId });
+      },
 
-    socketInstance.on("game_started", ({ drawer, timeLeft }) => {
-      setTimeLeft(timeLeft);
-      setGameState(GameState.PLAYING);
-      setGuesses([]);
-      console.log(`Game started! ${drawer} is drawing.`);
-    });
+      onGameStarted: ({ drawer, timeLeft }) => {
+        dispatch({ type: "GAME_STARTED", payload: { timeLeft } });
+        console.log(`Game started! ${drawer} is drawing.`);
+      },
 
-    socketInstance.on("start_drawing", ({ word, drawer, timeLeft }) => {
-      setCurrentWord(word);
-      setTimeLeft(timeLeft);
-      setGameState(GameState.PLAYING);
-      setGuesses([]);
-      console.log(`Drawing started! Word: ${word}, Drawer: ${drawer}`);
-    });
+      onStartDrawing: ({ word, drawer, timeLeft }) => {
+        dispatch({ type: "START_DRAWING", payload: { word, timeLeft } });
+        console.log(`Drawing started! Word: ${word}, Drawer: ${drawer}`);
+      },
 
-    socketInstance.on("drawing_data", (_points) => {});
+      onDrawingData: (_points) => {},
 
-    socketInstance.on("clear_canvas", () => {
-      // Canvas clearing is handled by the Canvas component directly
-      console.log("Canvas cleared by drawer");
-    });
+      onClearCanvas: () => {
+        console.log("Canvas cleared by drawer");
+      },
 
-    socketInstance.on("guess_feedback", ({ correct, guess, username }) => {
-      const newGuess: GuessEvent = {
-        username,
-        guess,
-        timestamp: Date.now(),
-      };
-      setGuesses((prev) => [...prev, newGuess]);
-    });
+      onGuessFeedback: ({ guess, username }) => {
+        const newGuess: GuessEvent = {
+          username,
+          guess,
+          timestamp: Date.now(),
+        };
+        dispatch({ type: "ADD_GUESS", payload: newGuess });
+      },
 
-    socketInstance.on("round_over", ({ correctWord, scores }) => {
-      setCurrentWord(correctWord);
-      setScores(scores);
-      setGameState(GameState.ROUND_OVER);
-    });
+      onRoundOver: ({ correctWord, scores }) => {
+        dispatch({ type: "ROUND_OVER", payload: { correctWord, scores } });
+      },
 
-    socketInstance.on("game_over", ({ finalScores }) => {
-      setScores(finalScores);
-      setGameState(GameState.GAME_OVER);
-    });
+      onGameOver: ({ finalScores }) => {
+        dispatch({ type: "GAME_OVER", payload: { finalScores } });
+      },
 
-    socketInstance.on("timer_update", (time: number) => {
-      setTimeLeft(time);
-    });
+      onTimerUpdate: (time: number) => {
+        dispatch({ type: "SET_TIME_LEFT", payload: time });
+      },
 
-    socketInstance.on("error", (message: string) => {
-      alert(`Error: ${message}`);
-    });
+      onUsersUpdated: (updatedUsers: User[]) => {
+        dispatch({ type: "SET_USERS", payload: updatedUsers });
+        console.log("Users updated:", updatedUsers);
+      },
+
+      onError: (message: string) => {
+        alert(`Error: ${message}`);
+      },
+    };
+
+    socketService.setupEventListeners(callbacks);
 
     return () => {
-      socketInstance.disconnect();
+      socketService.disconnect();
     };
   }, []);
 
   // Update current user when users or username changes
   useEffect(() => {
     console.log("useEffect currentUser update:", {
-      username,
-      usersCount: users.length,
-      usersList: users,
+      username: state.username,
+      usersCount: state.users.length,
+      usersList: state.users,
     });
-    if (username && users.length > 0) {
-      const user = users.find((u: User) => u.username === username);
+    if (state.username && state.users.length > 0) {
+      const user = state.users.find((u: User) => u.username === state.username);
       console.log("Found user:", user);
       if (user) {
-        setCurrentUser(user);
+        dispatch({ type: "SET_CURRENT_USER", payload: user });
         console.log("Set currentUser:", user);
       }
     }
-  }, [users, username]);
-
-  // Update users when game starts to reflect drawer status
-  useEffect(() => {
-    if (socket) {
-      socket.on("users_updated", (updatedUsers: User[]) => {
-        setUsers(updatedUsers);
-        console.log("Users updated:", updatedUsers);
-      });
-    }
-  }, [socket]);
+  }, [state.users, state.username]);
 
   const value: GameContextType = {
-    socket,
-    gameState,
-    setGameState,
-    roomCode,
-    setRoomCode,
-    username,
-    setUsername,
-    users,
-    setUsers,
-    currentUser,
-    setCurrentUser,
-    currentWord,
-    setCurrentWord,
-    timeLeft,
-    setTimeLeft,
-    guesses,
-    setGuesses,
-    scores,
-    setScores,
+    socket: socketService.getSocket(),
+    gameState: state.gameState,
+    setGameState: (gameState) =>
+      dispatch({ type: "SET_GAME_STATE", payload: gameState }),
+    roomCode: state.roomCode,
+    setRoomCode: (roomCode) =>
+      dispatch({ type: "SET_ROOM_CODE", payload: roomCode }),
+    username: state.username,
+    setUsername: (username) =>
+      dispatch({ type: "SET_USERNAME", payload: username }),
+    users: state.users,
+    setUsers: (users) => dispatch({ type: "SET_USERS", payload: users }),
+    currentUser: state.currentUser,
+    setCurrentUser: (user) =>
+      dispatch({ type: "SET_CURRENT_USER", payload: user }),
+    currentWord: state.currentWord,
+    setCurrentWord: (word) =>
+      dispatch({ type: "SET_CURRENT_WORD", payload: word }),
+    timeLeft: state.timeLeft,
+    setTimeLeft: (time) => dispatch({ type: "SET_TIME_LEFT", payload: time }),
+    guesses: state.guesses,
+    setGuesses: (guesses) =>
+      dispatch({ type: "SET_GUESSES", payload: guesses }),
+    scores: state.scores,
+    setScores: (scores) => dispatch({ type: "SET_SCORES", payload: scores }),
   };
 
   return <GameContext.Provider value={value}>{children}</GameContext.Provider>;
