@@ -56,7 +56,35 @@ A real-time multiplayer Pictionary game with cross-platform support. Players can
    
    ```
 
-3. **Start the development servers**
+3. **Set up environment variables**
+
+   Create a `.env` file in the root directory by copying the example:
+
+   ```bash
+   cp .env.example .env
+   ```
+
+   The `.env` file contains the following variables:
+
+   ```env
+   # Backend Configuration
+   PORT=3001
+
+   # Frontend URL for CORS configuration
+   FRONTEND_URL=http://localhost:3000
+
+   # Frontend Configuration
+   # URL of the backend server
+   VITE_BACKEND_URL=http://localhost:3001
+   ```
+
+   **Important Notes:**
+   - The `.env` file is already ignored by Git for security
+   - Modify the values if you need different ports or URLs
+   - `VITE_BACKEND_URL` is used by the frontend to connect to the backend
+   - `FRONTEND_URL` is used for CORS configuration on the backend
+
+4. **Start the development servers**
 
    ```bash
    # Start both backend and frontend
@@ -67,7 +95,7 @@ A real-time multiplayer Pictionary game with cross-platform support. Players can
    npm run dev:frontend   # Frontend only (port 3000)
    ```
 
-4. **Access the applications**
+5. **Access the applications**
    - **Web App**: <http://localhost:3000>
    - **Backend API**: <http://localhost:3001>
 

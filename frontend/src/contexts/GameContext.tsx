@@ -3,6 +3,8 @@ import React, {
   useContext,
   useReducer,
   useEffect,
+  useRef,
+  useMemo,
   ReactNode,
 } from "react";
 import { GameContextType, User, GuessEvent } from "../types";
@@ -28,15 +30,16 @@ interface GameProviderProps {
 
 export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
   const [state, dispatch] = useReducer(gameStateReducer, initialGameState);
-  const socketService = new SocketService();
+  const socketServiceRef = useRef<SocketService | null>(null);
 
-  useEffect(() => {
-    socketService.connect(
-      import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"
-    );
+  if (!socketServiceRef.current) {
+    socketServiceRef.current = new SocketService();
+  }
 
-    // Setup socket event callbacks
-    const callbacks: SocketCallbacks = {
+  const socketService = socketServiceRef.current;
+
+  const callbacks: SocketCallbacks = useMemo(
+    () => ({
       onRoomJoined: ({ users, roomCode }) => {
         console.log("room_joined event:", {
           users,
@@ -70,7 +73,7 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
         console.log("Canvas cleared by drawer");
       },
 
-      onGuessFeedback: ({ guess, username }) => {
+      onGuessFeedback: ({ correct, guess, username }) => {
         const newGuess: GuessEvent = {
           username,
           guess,
@@ -99,14 +102,21 @@ export const GameProvider: React.FC<GameProviderProps> = ({ children }) => {
       onError: (message: string) => {
         alert(`Error: ${message}`);
       },
-    };
+    }),
+    [state.username]
+  );
+
+  useEffect(() => {
+    socketService.connect(
+      import.meta.env.VITE_BACKEND_URL || "http://localhost:3001"
+    );
 
     socketService.setupEventListeners(callbacks);
 
     return () => {
       socketService.disconnect();
     };
-  }, []);
+  }, [socketService, callbacks]);
 
   // Update current user when users or username changes
   useEffect(() => {
